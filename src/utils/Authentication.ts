@@ -10,46 +10,53 @@ import config from '../config/config';
 
 async function findAuthenticationDB(
   db: Firebird.Database,
+  auth: AuthenticationResponse[],
 ): Promise<AuthenticationResponse[]> {
   const promisesFB: unknown[] = [];
   const authData: AuthenticationResponse[] = [];
-  for (let i = 0; i < config.COMPANIES.length; i += 1) {
-    promisesFB.push(
-      FirebirdService.QueryOne(db, `SELECT DATA FROM BI_CONFIG WHERE KEY = ?`, [
-        `AUTH_${config.COMPANIES[i]}`,
-      ])
-        .then(result => {
-          if (result) {
-            const auth: AuthenticationType = JSON.parse(result.DATA);
-            const authResponse: AuthenticationResponse = {
-              cnpj: config.COMPANIES[i],
-            };
-            if (!(auth.expiresAt < new Date().getTime()))
+  if (auth && auth.length === 0) {
+    for (let i = 0; i < config.COMPANIES.length; i += 1) {
+      promisesFB.push(
+        FirebirdService.QueryOne(
+          db,
+          `SELECT DATA FROM BI_CONFIG WHERE KEY = ?`,
+          [`AUTH_${config.COMPANIES[i]}`],
+        )
+          .then(result => {
+            if (result) {
+              const authDB: AuthenticationType = JSON.parse(result.DATA);
+              const authResponse: AuthenticationResponse = {
+                cnpj: config.COMPANIES[i],
+              };
+              if (!(authDB.expiresAt < new Date().getTime()))
+                authData.push({
+                  auth: authDB,
+                  ...authResponse,
+                });
+            } else {
               authData.push({
-                auth,
-                ...authResponse,
+                cnpj: config.COMPANIES[i],
               });
-          } else {
-            authData.push({
-              cnpj: config.COMPANIES[i],
-            });
-          }
-        })
-        .catch(err => {
-          logger.error(err);
-        }),
-    );
+            }
+          })
+          .catch(err => {
+            logger.error(err);
+          }),
+      );
+    }
   }
   await Promise.all(promisesFB);
   return authData;
 }
-async function Authenticate(): Promise<AuthenticationResponse[] | null> {
+async function Authenticate(
+  auth: AuthenticationResponse[],
+): Promise<AuthenticationResponse[]> {
   const db = await FirebirdService.Connect();
   if (!db) {
     logger.error('Não foi possível conectar ao banco de dados!');
-    return null;
+    throw new Error('Não foi possível conectar ao banco de dados!');
   }
-  const authData = await findAuthenticationDB(db);
+  const authData = await findAuthenticationDB(db, auth);
   const promisesAxios: unknown[] = [];
   for (let i = 0; i < authData.length; i += 1) {
     if (!authData[i].auth) {

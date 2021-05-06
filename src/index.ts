@@ -7,17 +7,27 @@ import FirebirdService from './services/firebird';
 import Authentication from './utils/Authentication';
 
 const timeout = 60000;
-let auth: AuthenticationResponse[] | null;
+let auth: AuthenticationResponse[];
 
 async function run() {
-  logger.info('inicio de ciclo');
+  let needAuthentication = false;
+  for (let i = 0; i < auth.length; i += 1) {
+    if (
+      !needAuthentication &&
+      auth &&
+      (auth[i].auth?.expiresAt || 0) < new Date().getTime()
+    ) {
+      needAuthentication = true;
+    }
+  }
+  if (needAuthentication) auth = await Authentication.Authenticate(auth);
 }
 
 async function jobLoop() {
   const db: Firebird.Database = await FirebirdService.Connect();
   const checkVersion = new CheckFirebirdVersion(db);
   await checkVersion.validate();
-  auth = await Authentication.Authenticate();
+  auth = await Authentication.Authenticate(auth);
 
   for (;;) {
     try {
