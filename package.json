@@ -31,5 +31,8 @@
     "dotenv": "^8.5.1",
     "node-firebird": "^0.9.9",
     "winston": "^3.3.3"
+  },
+  "lint-staged": {
+    "**/*": "prettier --write --ignore-unknown"
   }
 }
