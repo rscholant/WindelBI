@@ -1,3 +1,5 @@
 /*.js’
 node_modules
 dist
+.prettierignore
+package.json

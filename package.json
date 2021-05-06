@@ -33,6 +33,10 @@
     "winston": "^3.3.3"
   },
   "lint-staged": {
-    "**/*": "prettier --write --ignore-unknown && eslint --fix ."
+    "**/*": [
+      "eslint --fix",
+      "git add",
+      "prettier --write --ignore-unknown "
+    ]
   }
 }
