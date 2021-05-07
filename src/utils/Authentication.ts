@@ -14,7 +14,7 @@ async function findAuthenticationDB(
 ): Promise<AuthenticationResponse[]> {
   const promisesFB: unknown[] = [];
   const authData: AuthenticationResponse[] = [];
-  if (auth && auth.length === 0) {
+  if (!auth || auth.length === 0) {
     for (let i = 0; i < config.COMPANIES.length; i += 1) {
       promisesFB.push(
         FirebirdService.QueryOne(
@@ -44,8 +44,19 @@ async function findAuthenticationDB(
           }),
       );
     }
+  } else {
+    for (let i = 0; i < auth.length; i += 1) {
+      const authResponse: AuthenticationResponse = {
+        cnpj: auth[i].cnpj,
+      };
+      if (!((auth[i].auth?.expiresAt || 0) < new Date().getTime()))
+        authData.push({
+          auth: auth[i].auth,
+          ...authResponse,
+        });
+    }
   }
-  await Promise.all(promisesFB);
+  if (promisesFB && promisesFB.length > 0) await Promise.all(promisesFB);
   return authData;
 }
 async function Authenticate(

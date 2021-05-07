@@ -5,6 +5,8 @@
   "license": "MIT",
   "scripts": {
     "start:dev": "ts-node-dev -r tsconfig-paths/register --transpile-only --ignore-watch node_modules --no-notify src/index.ts",
+    "lint": "eslint --fix",
+    "ident": "prettier --write --ignore-unknown './**/*.ts' ",
     "build": "tsc",
     "pkg:windows": "pkg . --target=node14-win-x64 --output windel-bi.exe",
     "pkg:linux": "pkg . --target=latest-linux-x64 --output windel-bi.out"
@@ -34,8 +36,8 @@
   },
   "lint-staged": {
     "**/*": [
-      "eslint --fix",
-      "prettier --write --ignore-unknown ",
+      "eslint --fix './src/**/*.ts'",
+      "prettier --write --ignore-unknown './**/*.ts' ",
       "git add"
     ]
   }

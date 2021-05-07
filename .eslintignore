@@ -3,3 +3,5 @@ node_modules
 dist
 .prettierignore
 package.json
+windel-bi.json
+tsconfig.json

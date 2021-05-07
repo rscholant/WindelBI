@@ -1,6 +1,6 @@
 {
   "API_SERVER": "http://192.168.1.245:3000/",
-  "COMPANIES": ["1655151515421", "124"],
+  "COMPANIES": ["1655151515421"],
   "NODE_ENV": "development",
   "HOST": "192.168.1.146",
   "PORT": 3050,

@@ -1,8 +1,52 @@
 import Firebird from 'node-firebird';
+import { SincConfigResponse } from '../@types/response.type';
+import { AuthenticationResponse } from '../@types/authentication.type';
 import FirebirdService from '../services/firebird';
 import logger from '../services/logger';
+import axios from '../services/axios';
 
-export default class CheckFirebirdVersion {
+const getSincConfigAPI = async (
+  auth: AuthenticationResponse[],
+): Promise<SincConfigResponse[]> => {
+  const promises: unknown[] = [];
+  const responses: SincConfigResponse[] = [];
+  for (let i = 0; i < auth.length; i += 1) {
+    if (auth[i].auth) {
+      promises.push(
+        axios
+          .get('/sinc-config', {
+            headers: {
+              Authorization: `Bearer ${auth[0].auth?.accessToken}`,
+            },
+          })
+          .then(result => {
+            for (let x = 0; x < result.data.length; x += 1) {
+              const response: SincConfigResponse = {
+                ...result.data[x],
+                auth: auth[i].auth,
+              };
+              responses.push(response);
+            }
+          }),
+      );
+    }
+  }
+  await Promise.all(promises);
+  return responses;
+};
+const saveSincConfigDB = async (
+  db: Firebird.Database,
+  sincConfigs: SincConfigResponse[],
+) => {
+  for (let i = 0; i < sincConfigs.length; i += 1) {
+    FirebirdService.Execute(
+      db,
+      `UPDATE OR INSERT INTO BI_CONFIG (KEY, DATA) VALUES ('VERSION', ?) MATCHING (KEY)`,
+      [],
+    );
+  }
+};
+export default class Verifications {
   db: Firebird.Database;
 
   versionUpToDate = 2;
@@ -19,7 +63,12 @@ export default class CheckFirebirdVersion {
     );
   }
 
-  async validate(): Promise<void> {
+  async verifyConfigurations(auth: AuthenticationResponse[]): Promise<void> {
+    const sincConfigs = await getSincConfigAPI(auth);
+    await saveSincConfigDB(this.db, sincConfigs);
+  }
+
+  async verifyDB(): Promise<void> {
     let version = 0;
     let results;
     try {
