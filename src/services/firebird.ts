@@ -64,8 +64,8 @@ async function QueryOne(
 async function Execute(
   db: Firebird.Database,
   query: string,
-  params: any[],
+  params?: any[],
 ): Promise<void> {
-  await Query(db, query, params);
+  await Query(db, query, params || []);
 }
 export default { Connect, Disconnect, Query, QueryOne, Execute };
