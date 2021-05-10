@@ -1,15 +1,70 @@
 import Firebird from 'node-firebird';
+import io from 'socket.io-client';
 import axios from './services/axios';
 import logger from './services/logger';
 import { AuthenticationResponse } from './@types/authentication.type';
 import Verifications from './utils/Verifications';
 import FirebirdService from './services/firebird';
 import Authentication from './utils/Authentication';
+import Config from './config/config';
 
-const timeout = 60000;
+const socket = io('http://192.168.1.245:3000', {
+  transports: ['websocket'],
+  upgrade: false,
+  query: {
+    cnpj: 'asdasdasd',
+  },
+  auth: {
+    token: 'abcd',
+  },
+});
+socket.on('connect', () => {
+  console.log(socket.id);
+});
+
+const timeout = 60 * 1000;
 let auth: AuthenticationResponse[];
 
-async function run() {
+async function run(db: Firebird.Database) {
+  const promises: unknown[] = [];
+  for (let i = 0; i < auth.length; i += 1) {
+    if (auth[i].auth) {
+      promises.push(
+        FirebirdService.Query(
+          db,
+          `SELECT * FROM BI_REPLIC_CONFIG WHERE STATUS = 1 AND CNPJ = ?`,
+          [auth[i].cnpj],
+          // eslint-disable-next-line no-loop-func
+        ).then(results => {
+          results.forEach(async result => {
+            const data = await FirebirdService.Query(db, result.QUERY, []);
+            const response = await axios.post(
+              'sinc-data',
+              {
+                sincConfig: { id: result.ID },
+                dateSinc: new Date().getTime(),
+                data,
+              },
+              {
+                headers: {
+                  Authorization: `Bearer ${auth[i].auth?.accessToken}`,
+                },
+              },
+            );
+            if (response.status === 201) {
+              await FirebirdService.Execute(
+                db,
+                `UPDATE BI_REPLIC_CONFIG SET STATUS = 0 WHERE ID = ?`,
+                [result.ID],
+              );
+            }
+          });
+        }),
+      );
+    }
+  }
+  await Promise.all(promises);
+
   /* At the end of each run, it will verify the authentication  */
   let needAuthentication = false;
   for (let i = 0; i < auth.length; i += 1) {
@@ -24,23 +79,33 @@ async function run() {
   if (needAuthentication) auth = await Authentication.Authenticate(auth);
 }
 
-async function jobLoop() {
+(async () => {
   const db: Firebird.Database = await FirebirdService.Connect();
   const verifications = new Verifications(db);
   await verifications.verifyDB();
-  auth = await Authentication.Authenticate(auth);
+  auth = await Authentication.Authenticate();
   await verifications.verifyConfigurations(auth);
+  let isVerifying = false;
+
   for (;;) {
     try {
+      /* Every x (4 hours) times it will check if there is a new configuration for download. */
+      if (!isVerifying) {
+        isVerifying = true;
+        // eslint-disable-next-line no-loop-func
+        setTimeout(async () => {
+          await verifications.verifyConfigurations(auth);
+          isVerifying = false;
+        }, 4 * 60 * 60 * 1000);
+      }
       // eslint-disable-next-line no-await-in-loop
       await new Promise(resolve => {
         setTimeout(async () => {
-          resolve(await run());
+          resolve(await run(db));
         }, timeout);
       });
     } catch (e) {
       logger.error(e);
     }
   }
-}
-jobLoop().catch(logger.error);
+})();

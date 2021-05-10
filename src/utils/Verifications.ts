@@ -7,6 +7,7 @@ import logger from '../services/logger';
 import axios from '../services/axios';
 
 const getSincConfigAPI = async (
+  db: Firebird.Database,
   auth: AuthenticationResponse[],
 ): Promise<SincConfigResponse[]> => {
   const promises: unknown[] = [];
@@ -14,24 +15,32 @@ const getSincConfigAPI = async (
   for (let i = 0; i < auth.length; i += 1) {
     if (auth[i].auth) {
       promises.push(
-        axios
-          .get('/sinc-config', {
+        FirebirdService.QueryOne(
+          db,
+          `SELECT MAX(ID) AS ID FROM BI_REPLIC_CONFIG WHERE CNPJ = ?`,
+          [auth[i].cnpj],
+        ).then(async resultQuery => {
+          const url =
+            resultQuery && resultQuery.ID
+              ? `/sinc-config/is-newer/${resultQuery.ID}`
+              : '/sinc-config';
+          const result = await axios.get(url, {
             headers: {
               Authorization: `Bearer ${auth[0].auth?.accessToken}`,
             },
-          })
-          .then(result => {
-            for (let x = 0; x < result.data.length; x += 1) {
-              const response: SincConfigResponse = {
-                ...result.data[x],
-                auth: auth[i].auth,
-              };
-              responses.push(response);
-            }
-          }),
+          });
+          for (let x = 0; x < result.data.length; x += 1) {
+            const response: SincConfigResponse = {
+              ...result.data[x],
+              auth: auth[i].auth,
+            };
+            responses.push(response);
+          }
+        }),
       );
     }
   }
+
   await Promise.all(promises);
   return responses;
 };
@@ -96,9 +105,14 @@ const installSincOnTable = async (db: Firebird.Database, table: string) => {
     [],
   );
   let triggerNomeUUID = `uuid_${table}`;
+  let triggerNomeReplic = `BI_${table}`;
   if (triggerNomeUUID.length >= 31) {
     const hash = md5(table);
     triggerNomeUUID = `${triggerNomeUUID.substr(0, 27)}_${hash.substr(0, 3)}`;
+    triggerNomeReplic = `${triggerNomeReplic.substr(0, 27)}_${hash.substr(
+      0,
+      3,
+    )}`;
   }
   await FirebirdService.Execute(
     db,
@@ -117,6 +131,29 @@ const installSincOnTable = async (db: Firebird.Database, table: string) => {
   await FirebirdService.Execute(
     db,
     `GRANT UPDATE, REFERENCES ON ${table} TO TRIGGER ${triggerNomeUUID}`,
+    [],
+  );
+  await FirebirdService.Execute(
+    db,
+    `
+    CREATE OR ALTER TRIGGER ${triggerNomeReplic} FOR ${table}
+    ACTIVE AFTER INSERT OR UPDATE OR DELETE POSITION 0
+    AS 
+    BEGIN 
+      UPDATE BI_REPLIC_CONFIG 
+      SET STATUS = 1
+      WHERE TABLES LIKE '%${table}%';
+    END`,
+    [],
+  );
+  await FirebirdService.Execute(
+    db,
+    `GRANT INSERT ON REPLIC_DATA_STATUS TO TRIGGER ${triggerNomeReplic}`,
+    [],
+  );
+  await FirebirdService.Execute(
+    db,
+    `GRANT UPDATE, REFERENCES ON ${table} TO TRIGGER ${triggerNomeReplic}`,
     [],
   );
 };
@@ -149,14 +186,19 @@ export default class Verifications {
   }
 
   async verifyConfigurations(auth: AuthenticationResponse[]): Promise<void> {
-    const sincConfigs = await getSincConfigAPI(auth);
+    logger.info('Starting to check for new configurations');
+    const sincConfigs = await getSincConfigAPI(this.db, auth);
     const promises: unknown[] = [];
     for (let i = 0; i < sincConfigs.length; i += 1) {
-      sincConfigs[i].tables.forEach(table => {
-        promises.push(installSincOnTable(this.db, table));
+      sincConfigs[i].tables.forEach(async table => {
+        if (await this.verifyTable(table))
+          promises.push(async () => {
+            await installSincOnTable(this.db, table);
+            await saveSincConfigDB(this.db, sincConfigs);
+          });
       });
     }
-    await saveSincConfigDB(this.db, sincConfigs);
+    await Promise.all(promises);
   }
 
   async verifyDB(): Promise<void> {

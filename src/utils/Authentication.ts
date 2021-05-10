@@ -10,7 +10,7 @@ import config from '../config/config';
 
 async function findAuthenticationDB(
   db: Firebird.Database,
-  auth: AuthenticationResponse[],
+  auth?: AuthenticationResponse[],
 ): Promise<AuthenticationResponse[]> {
   const promisesFB: unknown[] = [];
   const authData: AuthenticationResponse[] = [];
@@ -28,11 +28,16 @@ async function findAuthenticationDB(
               const authResponse: AuthenticationResponse = {
                 cnpj: config.COMPANIES[i],
               };
-              if (!(authDB.expiresAt < new Date().getTime()))
+              if (!(authDB.expiresAt < new Date().getTime())) {
                 authData.push({
                   auth: authDB,
                   ...authResponse,
                 });
+              } else {
+                authData.push({
+                  ...authResponse,
+                });
+              }
             } else {
               authData.push({
                 cnpj: config.COMPANIES[i],
@@ -60,7 +65,7 @@ async function findAuthenticationDB(
   return authData;
 }
 async function Authenticate(
-  auth: AuthenticationResponse[],
+  auth?: AuthenticationResponse[],
 ): Promise<AuthenticationResponse[]> {
   const db = await FirebirdService.Connect();
   if (!db) {
