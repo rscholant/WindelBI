@@ -21,11 +21,13 @@ const logger = winston.createLogger({
       filename: 'error.log',
       level: 'error',
       format: filterOnly('error'),
+      maxsize: 20 * 1000000,
     }),
     new winston.transports.File({
       filename: 'info.log',
       level: 'info',
       format: filterOnly('info'),
+      maxsize: 20 * 1000000,
     }),
   ],
 });

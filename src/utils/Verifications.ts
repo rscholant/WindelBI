@@ -52,15 +52,14 @@ const saveSincConfigDB = async (
     FirebirdService.Execute(
       db,
       `UPDATE OR INSERT INTO BI_REPLIC_CONFIG 
-          (ID, CNPJ, QUERY, DATE_SINCE_LAST_PULL, STATUS, TABLES) 
+          (ID, CNPJ, QUERY, DATE_SINCE_LAST_PULL, TABLES) 
         VALUES 
-          (?, ?, ?, ?, ? , ?) MATCHING (ID, CNPJ)`,
+          (?, ?, ?, ?, ?) MATCHING (ID, CNPJ)`,
       [
         sincConfigs[i].id,
         sincConfigs[i].auth.cnpj,
         sincConfigs[i].sql,
         new Date(),
-        0,
         JSON.stringify(sincConfigs[i].tables),
       ],
     );
@@ -179,10 +178,26 @@ export default class Verifications {
       this.db,
       `SELECT * FROM rdb$triggers 
         WHERE RDB$RELATION_NAME = ?
-        AND "RDB$TRIGGER_NAME"  LIKE 'UUID%'`,
+        AND "RDB$TRIGGER_NAME"  LIKE 'BI_%'`,
       [table],
     );
     return !result;
+  }
+
+  async verifyConfiguration(sincConfig: SincConfigResponse): Promise<void> {
+    logger.info(`Starting to install a new configuration ${sincConfig.id}`);
+    const promises: unknown[] = [];
+    sincConfig.tables.forEach(async table => {
+      logger.info(`Installing in table: ${table}`);
+      const installInTable = await this.verifyTable(table);
+      if (installInTable) {
+        await installSincOnTable(this.db, table);
+      } else {
+        logger.info(`Configuration already installed in table: ${table}`);
+      }
+    });
+    await saveSincConfigDB(this.db, [sincConfig]);
+    await Promise.all(promises);
   }
 
   async verifyConfigurations(auth: AuthenticationResponse[]): Promise<void> {
@@ -194,10 +209,10 @@ export default class Verifications {
         if (await this.verifyTable(table))
           promises.push(async () => {
             await installSincOnTable(this.db, table);
-            await saveSincConfigDB(this.db, sincConfigs);
           });
       });
     }
+    await saveSincConfigDB(this.db, sincConfigs);
     await Promise.all(promises);
   }
 

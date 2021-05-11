@@ -1,5 +1,5 @@
 import Firebird from 'node-firebird';
-import io from 'socket.io-client';
+import socketClient from 'socket.io-client';
 import axios from './services/axios';
 import logger from './services/logger';
 import { AuthenticationResponse } from './@types/authentication.type';
@@ -7,20 +7,7 @@ import Verifications from './utils/Verifications';
 import FirebirdService from './services/firebird';
 import Authentication from './utils/Authentication';
 import Config from './config/config';
-
-const socket = io('http://192.168.1.245:3000', {
-  transports: ['websocket'],
-  upgrade: false,
-  query: {
-    cnpj: 'asdasdasd',
-  },
-  auth: {
-    token: 'abcd',
-  },
-});
-socket.on('connect', () => {
-  console.log(socket.id);
-});
+import { SincConfigResponse } from './@types/response.type';
 
 const timeout = 60 * 1000;
 let auth: AuthenticationResponse[];
@@ -85,19 +72,41 @@ async function run(db: Firebird.Database) {
   await verifications.verifyDB();
   auth = await Authentication.Authenticate();
   await verifications.verifyConfigurations(auth);
-  let isVerifying = false;
-
+  let ioArray = [];
+  ioArray = [];
+  for (let i = 0; i < auth.length; i += 1) {
+    const authWS = auth[i];
+    const io = socketClient(Config.API_SERVER, {
+      transports: ['websocket'],
+      upgrade: false,
+      query: {
+        auth: auth[i].cnpj,
+      },
+    });
+    io.on('error', (error: string) => {
+      logger.error(error);
+    });
+    io.on('connect_error', (error: string) => {
+      logger.error(error);
+    });
+    io.on('connect', async () => {
+      logger.info('Connected to websocket server');
+      io.on('sinc-config', async (message: SincConfigResponse) => {
+        try {
+          await verifications.verifyConfiguration({
+            ...message,
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            auth: authWS.auth!,
+          });
+        } catch (err) {
+          logger.error(err);
+        }
+      });
+    });
+    ioArray.push(io);
+  }
   for (;;) {
     try {
-      /* Every x (4 hours) times it will check if there is a new configuration for download. */
-      if (!isVerifying) {
-        isVerifying = true;
-        // eslint-disable-next-line no-loop-func
-        setTimeout(async () => {
-          await verifications.verifyConfigurations(auth);
-          isVerifying = false;
-        }, 4 * 60 * 60 * 1000);
-      }
       // eslint-disable-next-line no-await-in-loop
       await new Promise(resolve => {
         setTimeout(async () => {
