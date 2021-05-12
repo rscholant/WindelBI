@@ -28,7 +28,7 @@ async function findAuthenticationDB(
               const authResponse: AuthenticationResponse = {
                 cnpj: config.COMPANIES[i],
               };
-              if (!(authDB.expiresAt < new Date().getTime())) {
+              if (authDB.expiresAt > new Date().getTime()) {
                 authData.push({
                   auth: authDB,
                   ...authResponse,
