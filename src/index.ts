@@ -7,9 +7,17 @@ import FirebirdService from './services/firebird';
 import Authentication from './utils/Authentication';
 import initWebSocket from './services/websocket';
 
-const timeout = 60 * 1000;
+const timeout = 5 * 60 * 1000;
 let auth: AuthenticationResponse[];
-
+let ioArray = [];
+process
+  .on('unhandledRejection', (reason, p) => {
+    logger.error('Unhandled Rejection at Promise', { reason, p });
+  })
+  .on('uncaughtException', err => {
+    console.log(err);
+    // logger.error('Uncaught Exception thrown', err);
+  });
 async function run(db: Firebird.Database) {
   const promises: unknown[] = [];
   for (let i = 0; i < auth.length; i += 1) {
@@ -70,22 +78,15 @@ async function run(db: Firebird.Database) {
   await verifications.verifyDB();
   auth = await Authentication.Authenticate();
   await verifications.verifyConfigurations(auth);
-  let ioArray = [];
   ioArray = [];
   for (let i = 0; i < auth.length; i += 1) {
     const authWS = auth[i];
-    ioArray.push(initWebSocket(authWS, verifications));
+    ioArray.push(initWebSocket(authWS));
   }
-  for (;;) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise(resolve => {
-        setTimeout(async () => {
-          resolve(await run(db));
-        }, timeout);
-      });
-    } catch (e) {
-      logger.error(e);
-    }
-  }
-})();
+
+  setInterval(async () => {
+    await run(db);
+  }, timeout);
+})().catch(err => {
+  logger.error(err);
+});

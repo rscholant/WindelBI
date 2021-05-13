@@ -35,22 +35,27 @@ async function Disconnect(db: Firebird.Database): Promise<void> {
     });
   });
 }
+// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
 async function Query(
   db: Firebird.Database,
   query: string,
   params: any[],
 ): Promise<any[]> {
   return new Promise((resolve, reject) => {
-    db.query(query, params, (err, result) => {
-      if (err) {
-        logger.error(
-          `Erro ao executar query ${query} com os parâmetros ${params}`,
-          err,
-        );
-        reject(err);
-      }
-      resolve(result);
-    });
+    try {
+      db.query(query, params, (err, result) => {
+        if (err) {
+          logger.error(
+            `Erro ao executar query ${query} com os parâmetros ${params}`,
+            err,
+          );
+          reject(err);
+        }
+        resolve(result);
+      });
+    } catch (err) {
+      logger.error('error when executing query', err);
+    }
   });
 }
 async function QueryOne(

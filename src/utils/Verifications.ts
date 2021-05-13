@@ -196,8 +196,9 @@ export default class Verifications {
         logger.info(`Configuration already installed in table: ${table}`);
       }
     });
-    await saveSincConfigDB(this.db, [sincConfig]);
     await Promise.all(promises);
+    console.log('vai salvar a configuração no banco!');
+    await saveSincConfigDB(this.db, [sincConfig]);
   }
 
   async verifyConfigurations(auth: AuthenticationResponse[]): Promise<void> {
