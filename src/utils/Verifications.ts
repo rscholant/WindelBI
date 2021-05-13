@@ -1,4 +1,3 @@
-import Firebird from 'node-firebird';
 import md5 from 'md5';
 import { SincConfigResponse } from '../@types/response.type';
 import { AuthenticationResponse } from '../@types/authentication.type';
@@ -7,7 +6,6 @@ import logger from '../services/logger';
 import axios from '../services/axios';
 
 const getSincConfigAPI = async (
-  db: Firebird.Database,
   auth: AuthenticationResponse[],
 ): Promise<SincConfigResponse[]> => {
   const promises: unknown[] = [];
@@ -16,7 +14,6 @@ const getSincConfigAPI = async (
     if (auth[i].auth) {
       promises.push(
         FirebirdService.QueryOne(
-          db,
           `SELECT MAX(ID) AS ID FROM BI_REPLIC_CONFIG WHERE CNPJ = ?`,
           [auth[i].cnpj],
         ).then(async resultQuery => {
@@ -44,13 +41,9 @@ const getSincConfigAPI = async (
   await Promise.all(promises);
   return responses;
 };
-const saveSincConfigDB = async (
-  db: Firebird.Database,
-  sincConfigs: SincConfigResponse[],
-) => {
+const saveSincConfigDB = async (sincConfigs: SincConfigResponse[]) => {
   for (let i = 0; i < sincConfigs.length; i += 1) {
     FirebirdService.Execute(
-      db,
       `UPDATE OR INSERT INTO BI_REPLIC_CONFIG 
           (ID, CNPJ, QUERY, DATE_SINCE_LAST_PULL, TABLES) 
         VALUES 
@@ -66,10 +59,9 @@ const saveSincConfigDB = async (
   }
 };
 
-const installSincOnTable = async (db: Firebird.Database, table: string) => {
-  logger.info(`initializing table ${table}`);
+const installSincOnTable = async (table: string) => {
+  logger.info(`[Engine] - initializing table ${table}`);
   await FirebirdService.Execute(
-    db,
     `EXECUTE block as
       BEGIN
         if (not exists(select 1 
@@ -88,7 +80,6 @@ const installSincOnTable = async (db: Firebird.Database, table: string) => {
   }
 
   await FirebirdService.Execute(
-    db,
     `EXECUTE block as 
       BEGIN 
         if (not exists(select 1 
@@ -99,7 +90,6 @@ const installSincOnTable = async (db: Firebird.Database, table: string) => {
     [],
   );
   await FirebirdService.Execute(
-    db,
     `UPDATE ${table} SET SINC_UUID = UUID_TO_CHAR(GEN_UUID())`,
     [],
   );
@@ -114,7 +104,6 @@ const installSincOnTable = async (db: Firebird.Database, table: string) => {
     )}`;
   }
   await FirebirdService.Execute(
-    db,
     `
     CREATE OR ALTER TRIGGER ${triggerNomeUUID} FOR ${table}
         ACTIVE BEFORE INSERT POSITION 0
@@ -128,12 +117,10 @@ const installSincOnTable = async (db: Firebird.Database, table: string) => {
     [],
   );
   await FirebirdService.Execute(
-    db,
     `GRANT UPDATE, REFERENCES ON ${table} TO TRIGGER ${triggerNomeUUID}`,
     [],
   );
   await FirebirdService.Execute(
-    db,
     `
     CREATE OR ALTER TRIGGER ${triggerNomeReplic} FOR ${table}
     ACTIVE AFTER INSERT OR UPDATE OR DELETE POSITION 0
@@ -146,36 +133,26 @@ const installSincOnTable = async (db: Firebird.Database, table: string) => {
     [],
   );
   await FirebirdService.Execute(
-    db,
     `GRANT INSERT ON REPLIC_DATA_STATUS TO TRIGGER ${triggerNomeReplic}`,
     [],
   );
   await FirebirdService.Execute(
-    db,
     `GRANT UPDATE, REFERENCES ON ${table} TO TRIGGER ${triggerNomeReplic}`,
     [],
   );
 };
 export default class Verifications {
-  db: Firebird.Database;
-
   versionUpToDate = 2;
 
-  constructor(db: Firebird.Database) {
-    this.db = db;
-  }
-
-  async updateVersionOnDB(version: number): Promise<void> {
+  static async updateVersionOnDB(version: number): Promise<void> {
     await FirebirdService.Execute(
-      this.db,
       `UPDATE OR INSERT INTO BI_CONFIG (KEY, DATA) VALUES ('VERSION', ?) MATCHING (KEY)`,
       [version],
     );
   }
 
-  async verifyTable(table: string): Promise<boolean> {
+  static async verifyTable(table: string): Promise<boolean> {
     const result = await FirebirdService.QueryOne(
-      this.db,
       `SELECT * FROM rdb$triggers 
         WHERE RDB$RELATION_NAME = ?
         AND "RDB$TRIGGER_NAME"  LIKE 'BI_%'`,
@@ -184,36 +161,39 @@ export default class Verifications {
     return !result;
   }
 
-  async verifyConfiguration(sincConfig: SincConfigResponse): Promise<void> {
-    logger.info(`Starting to install a new configuration ${sincConfig.id}`);
+  static async verifyConfiguration(
+    sincConfig: SincConfigResponse,
+  ): Promise<void> {
+    logger.info(
+      `[WebSocket] - Starting to install a new configuration ${sincConfig.id}`,
+    );
     const promises: unknown[] = [];
     sincConfig.tables.forEach(async table => {
-      logger.info(`Installing in table: ${table}`);
-      const installInTable = await this.verifyTable(table);
+      logger.info(`[WebSocket] - Installing in table: ${table}`);
+      const installInTable = await Verifications.verifyTable(table);
       if (installInTable) {
-        await installSincOnTable(this.db, table);
-      } else {
-        logger.info(`Configuration already installed in table: ${table}`);
+        await installSincOnTable(table);
       }
     });
     await Promise.all(promises);
-    console.log('vai salvar a configuração no banco!');
-    await saveSincConfigDB(this.db, [sincConfig]);
+    await saveSincConfigDB([sincConfig]);
   }
 
-  async verifyConfigurations(auth: AuthenticationResponse[]): Promise<void> {
-    logger.info('Starting to check for new configurations');
-    const sincConfigs = await getSincConfigAPI(this.db, auth);
+  static async verifyConfigurations(
+    auth: AuthenticationResponse[],
+  ): Promise<void> {
+    logger.info('[Engine] - Starting to check for new configurations');
+    const sincConfigs = await getSincConfigAPI(auth);
     const promises: unknown[] = [];
     for (let i = 0; i < sincConfigs.length; i += 1) {
       sincConfigs[i].tables.forEach(async table => {
-        if (await this.verifyTable(table))
+        if (await Verifications.verifyTable(table))
           promises.push(async () => {
-            await installSincOnTable(this.db, table);
+            await installSincOnTable(table);
           });
       });
     }
-    await saveSincConfigDB(this.db, sincConfigs);
+    await saveSincConfigDB(sincConfigs);
     await Promise.all(promises);
   }
 
@@ -222,7 +202,6 @@ export default class Verifications {
     let results;
     try {
       results = await FirebirdService.QueryOne(
-        this.db,
         `SELECT KEY, DATA
           FROM BI_CONFIG
           WHERE KEY = ?`,
@@ -236,17 +215,16 @@ export default class Verifications {
     }
     if (version !== this.versionUpToDate) {
       logger.info(
-        `Atualizando banco de dados\n Versão atual encontrada: ${version}\n Versão encontrada ${this.versionUpToDate}`,
+        `[Engine] - Atualizando banco de dados\n Versão atual encontrada: ${version}\n Versão encontrada ${this.versionUpToDate}`,
       );
-      await this.applyModifications(version);
+      await Verifications.applyModifications(version);
     }
   }
 
-  async applyModifications(version: number): Promise<void> {
+  static async applyModifications(version: number): Promise<void> {
     if (version < 1) {
-      logger.info(`Aplicando atualizações para a versão 1`);
+      logger.info(`[Engine] - Applying updates for version 1`);
       await FirebirdService.Execute(
-        this.db,
         `EXECUTE BLOCK AS BEGIN
           IF (NOT EXISTS(SELECT 1 FROM rdb$relations WHERE rdb$relation_name = 'BI_CONFIG')) THEN
             EXECUTE STATEMENT 'CREATE TABLE BI_CONFIG (KEY VARCHAR(100), DATA VARCHAR(2000))';
@@ -254,12 +232,11 @@ export default class Verifications {
         [],
       );
 
-      await this.updateVersionOnDB(1);
+      await Verifications.updateVersionOnDB(1);
     }
     if (version < 2) {
-      logger.info(`Aplicando atualizações para a versão 2`);
+      logger.info(`[Engine] - Applying updates for version 2`);
       await FirebirdService.Execute(
-        this.db,
         `EXECUTE BLOCK AS BEGIN
           IF (NOT EXISTS(SELECT 1 FROM rdb$relations WHERE rdb$relation_name = 'BI_REPLIC_CONFIG')) THEN
             EXECUTE STATEMENT 'CREATE TABLE BI_REPLIC_CONFIG (

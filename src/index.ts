@@ -7,30 +7,28 @@ import FirebirdService from './services/firebird';
 import Authentication from './utils/Authentication';
 import initWebSocket from './services/websocket';
 
-const timeout = 5 * 60 * 1000;
+const timeout = 10 * 1000;
 let auth: AuthenticationResponse[];
 let ioArray = [];
 process
   .on('unhandledRejection', (reason, p) => {
-    logger.error('Unhandled Rejection at Promise', { reason, p });
+    logger.error('[Engine] - Unhandled Rejection at Promise', { reason, p });
   })
   .on('uncaughtException', err => {
-    console.log(err);
-    // logger.error('Uncaught Exception thrown', err);
+    logger.error('[Engine] - Uncaught Exception thrown', err);
   });
-async function run(db: Firebird.Database) {
+async function run() {
   const promises: unknown[] = [];
   for (let i = 0; i < auth.length; i += 1) {
     if (auth[i].auth) {
       promises.push(
         FirebirdService.Query(
-          db,
           `SELECT * FROM BI_REPLIC_CONFIG WHERE STATUS = 1 AND CNPJ = ?`,
           [auth[i].cnpj],
           // eslint-disable-next-line no-loop-func
         ).then(results => {
           results.forEach(async result => {
-            const data = await FirebirdService.Query(db, result.QUERY, []);
+            const data = await FirebirdService.Query(result.QUERY, []);
             const response = await axios.post(
               'sinc-data',
               {
@@ -46,7 +44,6 @@ async function run(db: Firebird.Database) {
             );
             if (response.status === 201) {
               await FirebirdService.Execute(
-                db,
                 `UPDATE BI_REPLIC_CONFIG SET STATUS = 0 WHERE ID = ?`,
                 [result.ID],
               );
@@ -73,11 +70,10 @@ async function run(db: Firebird.Database) {
 }
 
 (async () => {
-  const db: Firebird.Database = await FirebirdService.Connect();
-  const verifications = new Verifications(db);
+  const verifications = new Verifications();
   await verifications.verifyDB();
   auth = await Authentication.Authenticate();
-  await verifications.verifyConfigurations(auth);
+  await Verifications.verifyConfigurations(auth);
   ioArray = [];
   for (let i = 0; i < auth.length; i += 1) {
     const authWS = auth[i];
@@ -85,8 +81,8 @@ async function run(db: Firebird.Database) {
   }
 
   setInterval(async () => {
-    await run(db);
+    await run();
   }, timeout);
 })().catch(err => {
-  logger.error(err);
+  logger.error('[Engine] - Error on main process', err);
 });

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import winston from 'winston';
+import moment from 'moment';
 import config from '../config/config';
 
 const LEVEL = Symbol.for('level');
@@ -13,8 +14,11 @@ function filterOnly(level: any) {
 }
 const logger = winston.createLogger({
   format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.errors({ stack: true }),
-    winston.format.json(),
+    winston.format.printf(
+      info => `${info.timestamp} | ${info.level}: ${info.message}`,
+    ),
   ),
   transports: [
     new winston.transports.File({
@@ -34,7 +38,15 @@ const logger = winston.createLogger({
 
 if (config.NODE_ENV !== 'production') {
   logger.add(
-    new winston.transports.Console({ format: winston.format.simple() }),
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.errors({ stack: true }),
+        winston.format.printf(
+          info => `${info.timestamp} | ${info.level}: ${info.message}`,
+        ),
+      ),
+    }),
   );
 }
 

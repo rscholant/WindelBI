@@ -1,4 +1,3 @@
-import Firebird from 'node-firebird';
 import {
   AuthenticationType,
   AuthenticationResponse,
@@ -9,7 +8,6 @@ import logger from '../services/logger';
 import config from '../config/config';
 
 async function findAuthenticationDB(
-  db: Firebird.Database,
   auth?: AuthenticationResponse[],
 ): Promise<AuthenticationResponse[]> {
   const promisesFB: unknown[] = [];
@@ -17,11 +15,9 @@ async function findAuthenticationDB(
   if (!auth || auth.length === 0) {
     for (let i = 0; i < config.COMPANIES.length; i += 1) {
       promisesFB.push(
-        FirebirdService.QueryOne(
-          db,
-          `SELECT DATA FROM BI_CONFIG WHERE KEY = ?`,
-          [`AUTH_${config.COMPANIES[i]}`],
-        )
+        FirebirdService.QueryOne(`SELECT DATA FROM BI_CONFIG WHERE KEY = ?`, [
+          `AUTH_${config.COMPANIES[i]}`,
+        ])
           .then(result => {
             if (result) {
               const authDB: AuthenticationType = JSON.parse(result.DATA);
@@ -45,7 +41,7 @@ async function findAuthenticationDB(
             }
           })
           .catch(err => {
-            logger.error(err);
+            logger.error('[Authentication] ', err);
           }),
       );
     }
@@ -67,12 +63,7 @@ async function findAuthenticationDB(
 async function Authenticate(
   auth?: AuthenticationResponse[],
 ): Promise<AuthenticationResponse[]> {
-  const db = await FirebirdService.Connect();
-  if (!db) {
-    logger.error('Não foi possível conectar ao banco de dados!');
-    throw new Error('Não foi possível conectar ao banco de dados!');
-  }
-  const authData = await findAuthenticationDB(db, auth);
+  const authData = await findAuthenticationDB(auth);
   const promisesAxios: unknown[] = [];
   for (let i = 0; i < authData.length; i += 1) {
     if (!authData[i].auth) {
@@ -81,16 +72,18 @@ async function Authenticate(
           .post('/auth/login', { cnpj: authData[i].cnpj })
           .then(async result => {
             await FirebirdService.Execute(
-              db,
               'UPDATE OR INSERT INTO BI_CONFIG (KEY, DATA) VALUES (?, ?) MATCHING (KEY)',
               [`AUTH_${authData[i].cnpj}`, JSON.stringify(result.data)],
             ).catch(err => {
-              logger.error(err);
+              logger.error('[Authentication] ', err);
             });
             authData[i].auth = result.data;
           })
           .catch(err => {
-            logger.error('Não foi possível autenticar o usuário', err);
+            logger.error(
+              '[Authentication] - The user could not be authenticated',
+              err,
+            );
           }),
       );
     }

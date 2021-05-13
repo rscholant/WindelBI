@@ -38,6 +38,7 @@
     "date-fns": "^2.21.2",
     "dotenv": "^8.5.1",
     "md5": "^2.3.0",
+    "moment": "^2.29.1",
     "node-firebird": "^0.9.9",
     "socket.io-client": "^2.3.0",
     "winston": "^3.3.3",
