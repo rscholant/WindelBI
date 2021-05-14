@@ -1,4 +1,3 @@
-import Firebird from 'node-firebird';
 import axios from './services/axios';
 import logger from './services/logger';
 import { AuthenticationResponse } from './@types/authentication.type';
@@ -7,7 +6,7 @@ import FirebirdService from './services/firebird';
 import Authentication from './utils/Authentication';
 import initWebSocket from './services/websocket';
 
-const timeout = 10 * 1000;
+const timeout = 5 * 1000;
 let auth: AuthenticationResponse[];
 let ioArray = [];
 process
@@ -23,7 +22,7 @@ async function run() {
     if (auth[i].auth) {
       promises.push(
         FirebirdService.Query(
-          `SELECT * FROM BI_REPLIC_CONFIG WHERE STATUS = 1 AND CNPJ = ?`,
+          `SELECT * FROM BI_REPLIC_CONFIG WHERE COALESCE(STATUS, 0) != 1 AND CNPJ = ?`,
           [auth[i].cnpj],
           // eslint-disable-next-line no-loop-func
         ).then(results => {

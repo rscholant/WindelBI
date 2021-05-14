@@ -47,8 +47,7 @@
   "lint-staged": {
     "**/*": [
       "eslint --fix './src/**/*.ts'",
-      "prettier --write --ignore-unknown './**/*.ts' ",
-      "git add"
+      "prettier --write --ignore-unknown './**/*.ts' "
     ]
   },
   "config": {
